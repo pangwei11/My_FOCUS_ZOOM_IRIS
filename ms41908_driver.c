@@ -23,7 +23,7 @@
 #define MS41908_CNT              1               // 单设备
 #define MS41908_NAME            "MS41908"       // 设备名称
 #define MS41908_IOCTL_MAGIC     'F'             // IOCTL魔法数
-#define MS41908_SPI_SPEED   4000000         // SPI默认最大速率
+#define MS41908_SPI_SPEED   4000000             // SPI默认最大速率
 #define MS41908_IRIS_MAX_VAL    0x3FF           // 光圈最大有效值
 #define MS41908_VD_PULSE_US     20              // VD_FZ脉冲宽度(us)
 
@@ -69,11 +69,14 @@
 #define MS41908_MOTOR_ZOOM_REV    0x0440  // 变焦反转
 #define MS41908_MOTOR_ZOOM_STOP   0x0400  // 变焦停止
 
-/* ===================== 寄存器初始化配置表（提高可维护性） ===================== */
-static const struct reg_init {
-    uint8_t addr;
-    uint16_t data;
-} ms41908_reg_init_list[] = {
+/* ===================== 寄存器数据结构体======================== */
+struct reg_data {
+    uint8_t addr;    
+    uint16_t data;   
+};
+
+/* ===================== 寄存器初始化配置表======================== */
+static const struct reg_data ms41908_reg_init_list[] = {
     {MS41908_REG_PWM_DT1,        0x1e03},
     {MS41908_REG_MOTOR_A_WAIT,   0x0001},
     {MS41908_REG_MOTOR_A_DUTY,   0x7878},
@@ -93,12 +96,6 @@ static const struct reg_init {
     {MS41908_REG_IRIS_CFG,       0x0300},
 };
 
-// 寄存器数据结构体（传递地址和数据）
-struct reg_data {
-    uint8_t addr;    // 寄存器地址
-    uint16_t data;   // 16位数据
-};
-
 /* ===================== 设备结构体 ===================== */
 struct MS41908_DEV {
 	struct spi_device *spi;
@@ -111,7 +108,7 @@ struct MS41908_DEV {
 	void *private_data;			/* 私有数据 		*/
     struct gpio_desc *res_gpio; /* 复位 GPIO 描述符 */
     struct gpio_desc *vd_fz_gpio; /* GPIO_VD 描述符 */
-    struct mutex lock;          /* 新增：硬件操作互斥锁 */
+    struct mutex lock;          /* 硬件操作互斥锁 */
 };
 
 static struct MS41908_DEV my_ms41908_dev;
@@ -126,26 +123,26 @@ static struct MS41908_DEV my_ms41908_dev;
 static int ms41908_read_reg(struct MS41908_DEV *dev, uint8_t addr, uint16_t *data)
 {
     int ret;
-    uint8_t tx_buf[3] = {0};  // 发送缓冲区：命令字节 + 2字节填充
-    uint8_t rx_buf[3] = {0};  // 接收缓冲区：2字节填充的回显 + 2字节数据
+    uint8_t tx_buf[3] = {0};  
+    uint8_t rx_buf[3] = {0};  
     struct spi_transfer t = {
         .tx_buf = tx_buf,
         .rx_buf = rx_buf,
-        .len = 3,              // 发送3字节（命令+2填充），接收3字节
+        .len = 3,              
         .speed_hz = dev->spi->max_speed_hz,
         .bits_per_word = 8,
     };
 
-    /* 1. 构造读命令（地址 + 读控制位） */
+    /* 1. 构造读命令 */
     tx_buf[0] = (addr & 0x3F) | (1 << 6); 
 
     ret = spi_sync_transfer(dev->spi, &t, 1);
     if (ret < 0) {
-        dev_err(&dev->spi->dev, "读寄存器失败（addr=0x%02X）: %d\n", addr, ret);
+        dev_err(&dev->spi->dev, "读寄存器失败(addr=0x%02X): %d\n", addr, ret);
         return ret;
     }
 
-    /* 3. 解析接收到的数据（低8位在前，高8位在后） */
+    /* 3. 解析接收到的数据 */
     *data = (rx_buf[2] << 8) | rx_buf[1];
 
     dev_dbg(&dev->spi->dev, "读寄存器成功: addr=0x%02X, data=0x%04X\n", addr, *data);
@@ -170,9 +167,7 @@ static int ms41908_write_reg(struct MS41908_DEV *dev, uint8_t addr, uint16_t dat
         .bits_per_word = 8,
     };
     
-    // 构造写命令（24位）
     tx_buf[0] = (addr & 0x3F);  
-    // 第二、三个字节：数据
     tx_buf[1] = data & 0xFF;        // D0-D7
     tx_buf[2] = (data >> 8) & 0xFF; // D8-D15
     
@@ -181,12 +176,12 @@ static int ms41908_write_reg(struct MS41908_DEV *dev, uint8_t addr, uint16_t dat
         dev_err(&dev->spi->dev, "SPI write reg failed! addr=0x%02X, ret=%d\n", addr, ret);
         return ret;
     }
-    
+
     return 0;
 }
 
 /**
- * @brief  驱动层实现GPIO_VD_FZ的电平翻转
+ * @brief  驱动层实现VD的电平翻转
  * @param  dev: 设备实例指针
  */
 static void ms41908_vd_signal(struct MS41908_DEV *dev)
@@ -196,10 +191,9 @@ static void ms41908_vd_signal(struct MS41908_DEV *dev)
         return;
     }
 
-    gpiod_set_value(dev->vd_fz_gpio, 1);  // 高电平
+    gpiod_set_value(dev->vd_fz_gpio, 1);  
     udelay(MS41908_VD_PULSE_US);        
-    gpiod_set_value(dev->vd_fz_gpio, 0);  // 低电平
-
+    gpiod_set_value(dev->vd_fz_gpio, 0);  
 }
 
 /**
@@ -254,18 +248,17 @@ static void ms41908_reset(struct MS41908_DEV *dev)
  */
 static int ms41908_open(struct inode *inode, struct file *filp)
 {
-    // 将设备实例指针存入file结构体，后续write/release可直接获取
     filp->private_data = &my_ms41908_dev;
     return 0;
 }
 
 /**
- * @brief 设备文件写函数（写入寄存器）
+ * @brief 设备文件写函数
  */
 static ssize_t ms41908_write(struct file *filp, const char __user *buf, size_t cnt, loff_t *off) 
 {
     struct MS41908_DEV *dev = filp->private_data;
-    struct reg_data reg_info;
+    struct reg_data reg_info = {0};
     int ret;
 
     mutex_lock(&dev->lock);
@@ -303,34 +296,29 @@ unlock_mutex:
 static ssize_t ms41908_read(struct file *filp, char __user *buf, size_t cnt, loff_t *off)
 {
     struct MS41908_DEV *dev = filp->private_data;
-    struct reg_data reg_info = {0};  // 内核层寄存器数据缓存
+    struct reg_data reg_info = {0};  
     int ret;
 
-    // 1. 校验用户传入的缓冲区长度：至少要能容纳struct reg_data（地址+数据）
     if (cnt < sizeof(struct reg_data)) {
         dev_err(&dev->spi->dev, "Read buf too small! need %zu, got %zu\n",
                 sizeof(struct reg_data), cnt);
         return -EINVAL;
     }
 
-    // 2. 加互斥锁保护硬件操作（防止多线程同时读写SPI）
     mutex_lock(&dev->lock);
 
-    // 3. 从用户空间拷贝「要读取的寄存器地址」到内核空间
     if (copy_from_user(&reg_info, buf, sizeof(struct reg_data))) {
         dev_err(&dev->spi->dev, "copy_from_user failed for read!\n");
         ret = -EFAULT;
         goto unlock_mutex;
     }
 
-    // 5. 调用底层寄存器读取函数，获取硬件值
     ret = ms41908_read_reg(dev, reg_info.addr, &reg_info.data);
     if (ret < 0) {
         dev_err(&dev->spi->dev, "Read reg 0x%02X failed! ret=%d\n", reg_info.addr, ret);
         goto unlock_mutex;
     }
 
-    // 6. 将读取到的数据拷贝回用户空间（包含地址+读取的16位数据）
     if (copy_to_user(buf, &reg_info, sizeof(struct reg_data))) {
         dev_err(&dev->spi->dev, "copy_to_user failed for read!\n");
         ret = -EFAULT;
@@ -340,7 +328,6 @@ static ssize_t ms41908_read(struct file *filp, char __user *buf, size_t cnt, lof
     dev_dbg(&dev->spi->dev, "Read reg success: addr=0x%02X, data=0x%04X\n",
             reg_info.addr, reg_info.data);
 
-    // 7. 返回成功读取的字节数（固定为struct reg_data的大小）
     ret = sizeof(struct reg_data);
 
 unlock_mutex:
@@ -349,7 +336,7 @@ unlock_mutex:
 }
 
 /**
- * @brief  ioctl处理函数（仅处理对焦命令）
+ * @brief  ioctl处理函数
  * @param  filp: 文件指针
  * @param  cmd: ioctl命令
  * @param  arg: 用户层传递的参数
@@ -509,7 +496,7 @@ static int ms41908_probe(struct spi_device *spi)
         goto err_device;
     }
 
-    //5.设备树节点指针（获取设备树中定义的 GPIO、SPI 等配置信息）
+    //5.设备树节点指针
     dev->nd = spi->dev.of_node;
     if (!dev->nd) {
         dev_err(&spi->dev, "Failed to get device node!\n");
@@ -552,7 +539,7 @@ static int ms41908_probe(struct spi_device *spi)
         goto err_motor_init;
     }
 
-    dev_info(&spi->dev, "AN41908 probe success! Major=%d, SPI mode=%d, Speed=%dHz\n",
+    dev_info(&spi->dev, "MS41908 probe success! Major=%d, SPI mode=%d, Speed=%dHz\n",
              dev->major, spi->mode, spi->max_speed_hz);
 	return 0;
 
@@ -574,12 +561,11 @@ static void  ms41908_remove(struct spi_device *spi)
 {
 	struct MS41908_DEV *dev = &my_ms41908_dev;
 
-	// 删除字符设备
     cdev_del(&dev->cdev);
     unregister_chrdev_region(dev->devid, MS41908_CNT);
     device_destroy(dev->class, dev->devid);
     class_destroy(dev->class);
-    dev_info(&spi->dev, "AN41908 remove success\n");
+    dev_info(&spi->dev, "MS41908 remove success\n");
 }
 
 /* 设备树匹配列表 */
