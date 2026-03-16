@@ -21,6 +21,7 @@
 //ceshi165465465464164
 //35413464648646464
 //1635465fasfd
+//zaitianjiaxiugai
 
 // 寄存器读写控制位
 #define AN41908_WRITE_CMD 0x00  // C0=0（写模式）
