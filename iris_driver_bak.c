@@ -18,9 +18,10 @@
 #include <linux/delay.h>
 #include <linux/mutex.h>
 
+//test
+
 #define AN41908_CNT 1              // 设备数量
 #define AN41908_NAME "AN41908"        // 设备名称
-
 
 //这个驱动的 “魔法数”（一般是一个自定义字符，比如 'F'），用于区分不同驱动的 IOCTL 命令，防止指令串扰
 #define AN41908_IOCTL_MAGIC 'F'
