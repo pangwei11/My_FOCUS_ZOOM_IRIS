@@ -85,7 +85,7 @@ int main(void)
     // 0x00寄存器最大值限制
     #define REG00_MAX 0x3FF
 
-    int fd = open("/dev/MS41908", O_RDWR);
+    int fd = open("/dev/MS41908_0", O_RDWR);
     if (fd < 0) {
         perror("open /dev/MS41908 failed");
         return -1;
